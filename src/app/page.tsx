@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import Papa from "papaparse";
 import dynamic from "next/dynamic";
 import FFT from "fft.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,12 +12,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import "katex/dist/katex.min.css";
-import { BlockMath } from "react-katex";
+// KaTeX CSS moved to globals.css to avoid bundling it with this page chunk
 
 import type { Layout, Config, Data } from "plotly.js";
 const Plot = dynamic(async () => {
-  const Plotly = (await import("plotly.js-dist-min")).default;
+  const Plotly = (await import("plotly.js-cartesian-dist-min")).default;
   const createPlotComponent = (await import("react-plotly.js/factory")).default as (
     plotly: unknown
   ) => React.ComponentType<{
@@ -31,6 +29,12 @@ const Plot = dynamic(async () => {
   }>;
   return createPlotComponent(Plotly);
 }, { ssr: false, loading: () => <div className="text-sm text-muted-foreground">Loading charts…</div> });
+
+// Lazy-load KaTeX only when needed
+const BlockMath = dynamic(async () => {
+  const mod = await import("react-katex");
+  return { default: mod.BlockMath };
+}, { ssr: false, loading: () => <div className="text-sm text-muted-foreground">Loading formula…</div> });
 
 // Plotly-like notifier helper (matches .plotly-notifier styles in globals.css)
 function showPlotlyNotifier(message: string, timeoutMs: number = 4000): void {
@@ -52,6 +56,8 @@ function showPlotlyNotifier(message: string, timeoutMs: number = 4000): void {
   const close = document.createElement("button");
   close.className = "notifier-close";
   close.textContent = "×";
+  close.setAttribute("aria-label", "Close notification");
+  close.title = "Close";
   close.onclick = fadeOutAndRemove;
 
   const note = document.createElement("div");
@@ -60,6 +66,8 @@ function showPlotlyNotifier(message: string, timeoutMs: number = 4000): void {
 
   container.appendChild(close);
   container.appendChild(note);
+  container.setAttribute("role", "status");
+  container.setAttribute("aria-live", "polite");
   document.body.appendChild(container);
 
   // Fade in
@@ -96,47 +104,49 @@ const COLUMN_KEYS: ColumnKey[] = [
 type ParsedRow = { time: number } & Partial<Record<ColumnKey, number>>;
 
 function parseTxtFile(file: File): Promise<ParsedRow[]> {
-  return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string | number>>(file, {
-      header: true,
-      delimiter: "\t",
-      skipEmptyLines: true,
-      dynamicTyping: (field) => COLUMN_KEYS.includes(field as ColumnKey),
-      complete: (results) => {
-        try {
-          const data: ParsedRow[] = [];
-          for (const row of results.data) {
-            const timeStr = String(row["time"] ?? "");
-            if (!timeStr) continue;
-            const parsed = new Date(timeStr.replace(/\.(\d{1,3})$/, ".$1")).getTime();
-            if (Number.isNaN(parsed)) continue;
-            const out: ParsedRow = { time: parsed };
-            for (const key of COLUMN_KEYS) {
-              const v = row[key];
-              const num = typeof v === "number" ? v : v != null && v !== "" ? Number(v) : NaN;
-              if (Number.isFinite(num)) {
-                out[key] = num;
+  return import("papaparse").then(({ default: Papa }) =>
+    new Promise((resolve, reject) => {
+      Papa.parse<Record<string, string | number>>(file, {
+        header: true,
+        delimiter: "\t",
+        skipEmptyLines: true,
+        dynamicTyping: (field) => COLUMN_KEYS.includes(field as ColumnKey),
+        complete: (results) => {
+          try {
+            const data: ParsedRow[] = [];
+            for (const row of results.data) {
+              const timeStr = String(row["time"] ?? "");
+              if (!timeStr) continue;
+              const parsed = new Date(timeStr.replace(/\.(\d{1,3})$/, ".$1")).getTime();
+              if (Number.isNaN(parsed)) continue;
+              const out: ParsedRow = { time: parsed };
+              for (const key of COLUMN_KEYS) {
+                const v = row[key];
+                const num = typeof v === "number" ? v : v != null && v !== "" ? Number(v) : NaN;
+                if (Number.isFinite(num)) {
+                  out[key] = num;
+                }
               }
+              data.push(out);
             }
-            data.push(out);
+            // Sort by monotonic time ascending and drop duplicate timestamps
+            data.sort((a, b) => a.time - b.time);
+            const dedup: ParsedRow[] = [];
+            let lastT = Number.NEGATIVE_INFINITY;
+            for (const r of data) {
+              if (r.time === lastT) continue;
+              dedup.push(r);
+              lastT = r.time;
+            }
+            resolve(dedup);
+          } catch (e) {
+            reject(e);
           }
-          // Sort by monotonic time ascending and drop duplicate timestamps
-          data.sort((a, b) => a.time - b.time);
-          const dedup: ParsedRow[] = [];
-          let lastT = Number.NEGATIVE_INFINITY;
-          for (const r of data) {
-            if (r.time === lastT) continue;
-            dedup.push(r);
-            lastT = r.time;
-          }
-          resolve(dedup);
-        } catch (e) {
-          reject(e);
-        }
-      },
-      error: (err) => reject(err),
-    });
-  });
+        },
+        error: (err) => reject(err),
+      });
+    })
+  );
 }
 
 function estimateSamplingHz(rows: ParsedRow[]): number | null {
@@ -526,9 +536,9 @@ export default function Home() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Select column</Label>
+                <Label id="column-select-label">Select column</Label>
                 <Select value={selectedKey} onValueChange={(v) => setSelectedKey(v as ColumnKey)}>
-                  <SelectTrigger className="w-[220px]">
+                  <SelectTrigger className="w-[220px]" aria-labelledby="column-select-label" aria-label="Select column">
                     <SelectValue placeholder="Column" />
                   </SelectTrigger>
                   <SelectContent>
@@ -546,6 +556,7 @@ export default function Home() {
                   onClick={() => setHarmonicsCount((c) => c + 1)}
                   disabled={!spectrum}
                   title="Add one harmonic line"
+                  aria-label="Add harmonic"
                 >
                   Add Harmonic
                 </Button>
@@ -554,6 +565,7 @@ export default function Home() {
                   onClick={() => setHarmonicsCount((c) => Math.max(0, c - 1))}
                   disabled={!spectrum || harmonicsCount <= 0}
                   title="Remove one harmonic line"
+                  aria-label="Remove harmonic"
                 >
                   Remove Harmonic
                 </Button>
@@ -590,8 +602,9 @@ export default function Home() {
                         onClick={() => setShowOriginal((v) => !v)}
                         aria-pressed={showOriginal}
                         title={showOriginal ? "Hide original" : "Show original"}
+                        aria-label={showOriginal ? "Hide original series" : "Show original series"}
                       >
-                        <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#a1a1aa" }} />
+                        <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#a1a1aa" }} aria-hidden="true" />
                         <span>original</span>
                       </button>
                       <button
@@ -600,8 +613,9 @@ export default function Home() {
                         onClick={() => setShowReconstructed((v) => !v)}
                         aria-pressed={showReconstructed}
                         title={showReconstructed ? "Hide reconstructed" : "Show reconstructed"}
+                        aria-label={showReconstructed ? "Hide reconstructed series" : "Show reconstructed series"}
                       >
-                        <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#f59e0b" }} />
+                        <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: "#f59e0b" }} aria-hidden="true" />
                         <span>reconstructed</span>
                       </button>
                     </div>
