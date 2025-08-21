@@ -122,16 +122,28 @@
 }
 
 /* Plotly notifier ("Double-click to zoom back out") theming */
-.dark .plotly-notifier {
-  background: oklch(0.21 0.006 285.885) !important; /* card */
-  color: oklch(0.985 0 0) !important; /* foreground */
-  border: 1px solid oklch(1 0 0 / 10%) !important; /* border */
-  box-shadow: 0 4px 12px oklch(0 0 0 / 0.3) !important;
+.plotly-notifier {
+  transition: opacity 0.3s ease-in-out;
 }
-.dark .plotly-notifier .notifier-note,
+.dark .plotly-notifier {
+  font-family: var(--font-sans), ui-sans-serif, system-ui !important;
+}
+.dark .plotly-notifier .notifier-note {
+  background-color: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
 .dark .plotly-notifier .notifier-note a {
-  color: oklch(0.985 0 0) !important;
+  color: var(--foreground) !important;
 }
 .dark .plotly-notifier .notifier-note a:hover {
-  text-decoration: underline;
+  text-decoration: underline !important;
+}
+.dark .plotly-notifier .notifier-close {
+  color: var(--muted-foreground) !important;
+}
+.dark .plotly-notifier .notifier-close:hover {
+  color: var(--foreground) !important;
 }
