@@ -285,6 +285,27 @@ export default function Home() {
   const isDefaultFileRef = useRef<boolean>(true);
 
   useEffect(() => {
+    // Warm up the KaTeX module in the background so the first render is instant.
+    // Use requestIdleCallback when available to avoid competing with critical work.
+    let cancelled = false;
+    const preload = () => {
+      // Dynamic import matches the specifier used by BlockMath above, so it reuses the cache.
+      import("react-katex").catch(() => {});
+    };
+    const requestIdle: ((cb: () => void) => number) | null =
+      typeof window !== "undefined" && typeof (window as unknown as { requestIdleCallback?: (cb: IdleRequestCallback) => number }).requestIdleCallback === "function"
+        ? (cb) => (window as unknown as { requestIdleCallback: (cb: IdleRequestCallback) => number }).requestIdleCallback(() => cb())
+        : null;
+    if (requestIdle) {
+      requestIdle(() => { if (!cancelled) preload(); });
+    } else {
+      const t = setTimeout(() => { if (!cancelled) preload(); }, 300);
+      return () => { cancelled = true; clearTimeout(t); };
+    }
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (harmonicsCount === 1 && !legendTipShownRef.current) {
       legendTipShownRef.current = true;
       showPlotlyNotifier("Click legend entries to show/hide traces");
