@@ -505,9 +505,9 @@ export default function Home() {
           <p className="ml-4 text-lg text-muted-foreground">by Mark</p>
         </div>
         <Card>
-          <CardHeader>
+          {/* <CardHeader>
             <CardTitle>Time Series and FFT</CardTitle>
-          </CardHeader>
+          </CardHeader> */}
           <CardContent>
             <div className="grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
               <div className="space-y-2">
